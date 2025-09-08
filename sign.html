@@ -1,0 +1,38 @@
+<canvas id="signature-pad" width="400" height="200" style="border:1px solid #000;"></canvas>
+<br>
+<button type="button" onclick="clearSignature()">Clear</button>
+<button type="button" onclick="saveSignature()">Submit</button>
+
+<div id="result"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+<script>
+  const canvas = document.getElementById("signature-pad");
+  const signaturePad = new SignaturePad(canvas);
+
+  function clearSignature() {
+    signaturePad.clear();
+  }
+
+  function saveSignature() {
+    if (signaturePad.isEmpty()) {
+      alert("Please provide a signature first.");
+      return;
+    }
+
+    // get base64 signature (PNG)
+    const dataURL = signaturePad.toDataURL("image/png");
+
+    // send to PHP backend
+    fetch("save_signature.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imgBase64: dataURL })
+    })
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById("result").innerHTML = data;
+    })
+    .catch(err => console.error("Error:", err));
+  }
+</script>
