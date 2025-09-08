@@ -1,0 +1,27 @@
+-- Create a database
+CREATE DATABASE IF NOT EXISTS signapp
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE signapp;
+
+-- Create the submissions table
+CREATE TABLE IF NOT EXISTS submissions (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  first_name VARCHAR(100) NOT NULL,
+  last_name  VARCHAR(100) NOT NULL,
+  email      VARCHAR(255) NOT NULL,
+  phone      VARCHAR(40)  NOT NULL,
+  topic      VARCHAR(50)  NOT NULL,
+  contact_pref ENUM('Email','Phone') NOT NULL,
+  interests  TEXT NULL,             -- pipe- or comma-separated list
+  terms      TINYINT(1) NOT NULL,   -- 1 agreed, 0 not agreed (we require 1)
+  message    TEXT NULL,
+  signature_file VARCHAR(255) NOT NULL,  -- saved PNG filename (relative path)
+  -- Optional: also store base64 or blob if you ever need it
+  -- signature_blob LONGBLOB NULL,
+
+  INDEX idx_email (email),
+  INDEX idx_created_at (created_at)
+) ENGINE=InnoDB;

@@ -1,4 +1,6 @@
 <?php
+require __DIR__ . '/db.php'; // brings in $pdo
+
 // Helper to sanitize text fields
 function field($key) {
   return isset($_POST[$key]) ? trim($_POST[$key]) : '';
@@ -11,23 +13,25 @@ $phone = field('phone');
 $topic = field('topic');
 $contact_pref = field('contact_pref');
 $message = field('message');
-$terms = field('terms') ? 'Yes' : 'No';
+$terms = field('terms') ? 1 : 0;
 $interests = isset($_POST['interests']) && is_array($_POST['interests']) ? implode('|', $_POST['interests']) : '';
 $sigDataUrl = field('signature_data');
 
 // Validate requireds (basic)
 $errors = [];
-foreach (['first_name','last_name','email','phone','topic','contact_pref','terms','signature_data'] as $req) {
+foreach (['first_name','last_name','email','phone','topic','contact_pref','signature_data'] as $req) {
   if (empty($_POST[$req])) $errors[] = "Missing: $req";
 }
+if ($terms !== 1) $errors[] = "You must agree to the terms.";
 
 if (!empty($errors)) {
   http_response_code(400);
   echo "<p style='color:red;'>Form errors:<br>" . implode('<br>', array_map('htmlspecialchars',$errors)) . "</p>";
+  echo "<p><a href='index.html'>&laquo; Back</a></p>";
   exit;
 }
 
-// Save signature image
+// Save signature image to disk
 $sigPngPath = '';
 if (strpos($sigDataUrl, 'data:image/png;base64,') === 0) {
   $base64 = substr($sigDataUrl, strlen('data:image/png;base64,'));
@@ -36,40 +40,58 @@ if (strpos($sigDataUrl, 'data:image/png;base64,') === 0) {
 
   if ($binary === false) {
     echo "<p style='color:red;'>Failed to decode signature image.</p>";
+    echo "<p><a href='index.html'>&laquo; Back</a></p>";
     exit;
   }
 
+  // Ensure the folder is writable (C:\xampp\htdocs\sign)
   $fileName = 'signature_' . time() . '_' . bin2hex(random_bytes(3)) . '.png';
-  $sigPngPath = __DIR__ . DIRECTORY_SEPARATOR . $fileName;
+  $fullPath = __DIR__ . DIRECTORY_SEPARATOR . $fileName;
 
-  if (!file_put_contents($sigPngPath, $binary)) {
+  if (!file_put_contents($fullPath, $binary)) {
     echo "<p style='color:red;'>Failed to save signature file.</p>";
+    echo "<p><a href='index.html'>&laquo; Back</a></p>";
     exit;
   }
+  $sigPngPath = $fileName; // store relative name (easier for <img src>)
 } else {
   echo "<p style='color:red;'>Signature data missing or invalid.</p>";
+  echo "<p><a href='index.html'>&laquo; Back</a></p>";
   exit;
 }
 
-// OPTIONAL: Save form data to CSV for quick logging
-$csvPath = __DIR__ . DIRECTORY_SEPARATOR . 'submissions.csv';
-$headerNeeded = !file_exists($csvPath);
-$fp = fopen($csvPath, 'a');
-if ($fp) {
-  if ($headerNeeded) {
-    fputcsv($fp, ['timestamp','first_name','last_name','email','phone','topic','contact_pref','interests','terms','message','signature_file']);
-  }
-  fputcsv($fp, [
-    date('Y-m-d H:i:s'),
-    $first, $last, $email, $phone, $topic, $contact_pref, $interests, $terms, $message,
-    basename($sigPngPath)
+// Insert into DB
+try {
+  $sql = "INSERT INTO submissions
+          (first_name, last_name, email, phone, topic, contact_pref, interests, terms, message, signature_file)
+          VALUES
+          (:first_name, :last_name, :email, :phone, :topic, :contact_pref, :interests, :terms, :message, :signature_file)";
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute([
+    ':first_name'     => $first,
+    ':last_name'      => $last,
+    ':email'          => $email,
+    ':phone'          => $phone,
+    ':topic'          => $topic,
+    ':contact_pref'   => $contact_pref,
+    ':interests'      => $interests,
+    ':terms'          => $terms,
+    ':message'        => $message,
+    ':signature_file' => $sigPngPath,
   ]);
-  fclose($fp);
+
+  $newId = $pdo->lastInsertId();
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo "<p style='color:red;'>Failed to save to the database.</p>";
+  // For debugging you could echo $e->getMessage() locally, but avoid in production
+  echo "<p><a href='index.html'>&laquo; Back</a></p>";
+  exit;
 }
 
-// Response page
+// Simple response page
 echo "<h2>Thanks, " . htmlspecialchars($first) . "!</h2>";
-echo "<p>Your submission has been saved.</p>";
+echo "<p>Your submission has been saved (ID #" . htmlspecialchars($newId) . ").</p>";
 
 echo "<h4>Summary</h4>";
 echo "<ul>";
@@ -79,10 +101,10 @@ echo "<li>Phone: " . htmlspecialchars($phone) . "</li>";
 echo "<li>Topic: " . htmlspecialchars($topic) . "</li>";
 echo "<li>Preferred Contact: " . htmlspecialchars($contact_pref) . "</li>";
 echo "<li>Interests: " . htmlspecialchars($interests ?: 'None') . "</li>";
-echo "<li>Agreed to Terms: " . htmlspecialchars($terms) . "</li>";
+echo "<li>Agreed to Terms: " . ($terms ? 'Yes' : 'No') . "</li>";
 echo "</ul>";
 
 echo "<h4>Signature</h4>";
-echo "<img src='" . htmlspecialchars(basename($sigPngPath)) . "' style='max-width:400px;border:1px solid #ccc;border-radius:6px;'>";
+echo "<img src='" . htmlspecialchars($sigPngPath) . "' style='max-width:400px;border:1px solid #ccc;border-radius:6px;'>";
 
 echo "<p><a href='index.html'>&laquo; Back to form</a></p>";
